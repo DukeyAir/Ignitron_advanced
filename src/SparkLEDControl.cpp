@@ -7,6 +7,16 @@
 
 #include "SparkLEDControl.h"
 
+#ifdef USE_NEOPIXEL_LEDS
+CRGB SparkLEDControl::leds_[NEOPIXEL_NUM_LEDS];
+const CRGB SparkLEDControl::COLOR_PRESET_ACTIVE = CRGB(0, 80, 0);   // Green
+const CRGB SparkLEDControl::COLOR_FX_ON = CRGB(0, 0, 80);           // Blue
+const CRGB SparkLEDControl::COLOR_FX_OFF = CRGB(0, 0, 0);           // Off
+const CRGB SparkLEDControl::COLOR_MIDI_ACTIVE = CRGB(80, 0, 80);    // Purple
+const CRGB SparkLEDControl::COLOR_TUNER = CRGB(80, 80, 0);          // Yellow
+const CRGB SparkLEDControl::COLOR_LOOPER = CRGB(80, 0, 0);          // Red
+#endif
+
 SparkLEDControl::SparkLEDControl() {
     sparkDC = nullptr;
     init();
@@ -21,6 +31,11 @@ SparkLEDControl::~SparkLEDControl() {
 }
 
 void SparkLEDControl::init() {
+#ifdef USE_NEOPIXEL_LEDS
+    FastLED.addLeds<WS2812B, NEOPIXEL_DATA_PIN, GRB>(leds_, NEOPIXEL_NUM_LEDS);
+    FastLED.setBrightness(50);
+    allLedOff();
+#else
     // Preset LEDs
     pinMode(LED_PRESET1_GPIO, OUTPUT);
     pinMode(LED_PRESET2_GPIO, OUTPUT);
@@ -48,6 +63,7 @@ void SparkLEDControl::init() {
     pinMode(OPTIONAL_GPIO_4, OUTPUT);
 #endif
     allLedOff();
+#endif // USE_NEOPIXEL_LEDS
 }
 
 void SparkLEDControl::updateLEDs() {
@@ -96,6 +112,9 @@ void SparkLEDControl::updateLEDs() {
         break;
     case SPARK_MODE_KEYBOARD:
         updateLedKeyboard();
+        break;
+    case SPARK_MODE_MIDI:
+        // MIDI mode LEDs handled per-button-press externally
         break;
     }
 }
@@ -227,6 +246,10 @@ void SparkLEDControl::updateLedTuner() {
 }
 
 void SparkLEDControl::allLedOff() {
+#ifdef USE_NEOPIXEL_LEDS
+    fill_solid(leds_, NEOPIXEL_NUM_LEDS, CRGB::Black);
+    neopixelShow();
+#else
     // Preset LEDs
     digitalWrite(LED_PRESET1_GPIO, LOW);
     digitalWrite(LED_PRESET2_GPIO, LOW);
@@ -252,9 +275,39 @@ void SparkLEDControl::allLedOff() {
     digitalWrite(OPTIONAL_GPIO_3, LOW);
     digitalWrite(OPTIONAL_GPIO_4, LOW);
 #endif
+#endif // USE_NEOPIXEL_LEDS
 }
 
 void SparkLEDControl::switchLed(int num, bool on, bool fxMode) {
+#ifdef USE_NEOPIXEL_LEDS
+    int idx = getLedIndex(num, fxMode);
+    if (idx == LED_IDX_INVALID || idx >= NEOPIXEL_NUM_LEDS) {
+        return;
+    }
+
+    unsigned long currentMillis = millis();
+
+    // Blink if enabled and in FX modification mode
+    if (ENABLE_FX_BLINK && fxMode && sparkDC->operationMode() == SPARK_MODE_APP && sparkDC->subMode() == SUB_MODE_FX) {
+        if (currentMillis - previousMillis >= blinkInterval_ms) {
+            blinkInvert = !blinkInvert;
+            previousMillis = currentMillis;
+        }
+        if (on && !blinkInvert) {
+            leds_[idx] = COLOR_FX_ON;
+        } else {
+            leds_[idx] = CRGB::Black;
+        }
+    } else {
+        CRGB color = fxMode ? COLOR_FX_ON : COLOR_PRESET_ACTIVE;
+        if (operationMode == SPARK_MODE_MIDI) {
+            color = COLOR_MIDI_ACTIVE;
+        }
+        leds_[idx] = on ? color : CRGB::Black;
+    }
+    neopixelShow();
+
+#else
     unsigned long currentMillis = millis();
     int STATE;
 
@@ -274,4 +327,27 @@ void SparkLEDControl::switchLed(int num, bool on, bool fxMode) {
         // Serial.printf("Pin %d [State=%d], invert=%d, fxMode=%d\n", ledGpio, STATE, blinkInvert, fxMode);
         digitalWrite(ledGpio, STATE);
     }
+#endif // USE_NEOPIXEL_LEDS
 }
+
+#ifdef USE_NEOPIXEL_LEDS
+void SparkLEDControl::neopixelShow() {
+    FastLED.show();
+}
+
+int SparkLEDControl::getLedIndex(int num, bool fxMode) {
+    if (!fxMode) {
+        // Preset mode: button num 1-8 maps to LED index 0-7
+        if (num >= 1 && num <= NEOPIXEL_NUM_LEDS) {
+            return num - 1;
+        }
+        return LED_IDX_INVALID;
+    } else {
+        // FX mode: button num 1-6 maps to LED index 0-5
+        if (num >= 1 && num <= 6) {
+            return num - 1;
+        }
+        return LED_IDX_INVALID;
+    }
+}
+#endif

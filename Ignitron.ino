@@ -12,6 +12,10 @@
 #include "src/SparkLEDControl.h"
 #include "src/SparkPresetControl.h"
 
+#ifdef BOARD_LILYGO_T_DISPLAY_S3
+#include "src/SparkMidiControl.h"
+#endif
+
 using namespace std;
 
 // Device Info Definitions
@@ -23,6 +27,10 @@ SparkButtonHandler spark_bh;
 SparkLEDControl spark_led;
 SparkDisplayControl sparkDisplay;
 SparkPresetControl &presetControl = SparkPresetControl::getInstance();
+
+#ifdef BOARD_LILYGO_T_DISPLAY_S3
+SparkMidiControl spark_midi;
+#endif
 
 unsigned long lastInitialPresetTimestamp = 0;
 unsigned long currentTimestamp = 0;
@@ -68,6 +76,9 @@ void setup() {
     case SPARK_MODE_KEYBOARD:
         Serial.println("======= Entering Keyboard mode =======");
         break;
+    case SPARK_MODE_MIDI:
+        Serial.println("======= Entering MIDI mode =======");
+        break;
     }
 
     sparkDisplay.setDataControl(&spark_dc);
@@ -78,10 +89,28 @@ void setup() {
     // Initializing control classes
     spark_led.setDataControl(&spark_dc);
 
+#ifdef BOARD_LILYGO_T_DISPLAY_S3
+    // Set up MIDI control for button handler
+    spark_bh.setMidiControl(&spark_midi);
+    if (operationMode == SPARK_MODE_MIDI) {
+        spark_midi.init();
+    }
+#endif
+
     Serial.println("Initialization done.");
 }
 
 void loop() {
+
+#ifdef BOARD_LILYGO_T_DISPLAY_S3
+    // Standalone MIDI mode - only needs button reading and display
+    if (operationMode == SPARK_MODE_MIDI) {
+        spark_bh.readButtons();
+        spark_led.updateLEDs();
+        sparkDisplay.update();
+        return;
+    }
+#endif
 
     // Methods to call only in APP mode
     if (operationMode == SPARK_MODE_APP) {

@@ -29,10 +29,12 @@ SparkBTControl::~SparkBTControl() {
         delete advDevice_;
         advDevice_ = nullptr;
     }
+#ifndef BOARD_LILYGO_T_DISPLAY_S3
     if (btSerial) {
         delete btSerial;
         btSerial = nullptr;
     }
+#endif
 }
 
 // Initializing BLE connection with NimBLE
@@ -423,6 +425,7 @@ void SparkBTControl::notifyClients(const vector<CmdData> &msg) {
         }
     }
 
+#ifndef BOARD_LILYGO_T_DISPLAY_S3
     if (btSerial && btSerial->hasClient()) {
         DEBUG_PRINTLN("Sending message via BT Serial:");
         for (auto chunk : msg) {
@@ -438,6 +441,7 @@ void SparkBTControl::notifyClients(const vector<CmdData> &msg) {
             DEBUG_PRINTF("Free Heap size: %d\n", ESP.getFreeHeap());
         }
     }
+#endif // BOARD_LILYGO_T_DISPLAY_S3
 }
 
 // AMP Mode
@@ -483,6 +487,7 @@ void SparkBTControl::stopScan() {
     }
 }
 
+#ifndef BOARD_LILYGO_T_DISPLAY_S3
 void SparkBTControl::serialCallback(esp_spp_cb_event_t event, esp_spp_cb_param_t *param) {
     if (event == ESP_SPP_SRV_OPEN_EVT) {
         Serial.println("Client Connected");
@@ -493,7 +498,9 @@ void SparkBTControl::serialCallback(esp_spp_cb_event_t event, esp_spp_cb_param_t
         isAppConnectedSerial_ = false;
     }
 }
+#endif
 
+#ifndef BOARD_LILYGO_T_DISPLAY_S3
 void SparkBTControl::startBTSerial() {
     btSerial = new BluetoothSerial();
     btSerial->register_callback(serialCallback);
@@ -514,6 +521,14 @@ void SparkBTControl::stopBTSerial() {
     btSerial = nullptr;
     Serial.println("BT Serial stopped");
 }
+#else
+void SparkBTControl::startBTSerial() {
+    Serial.println("BT Serial not available on ESP32-S3");
+}
+void SparkBTControl::stopBTSerial() {
+    Serial.println("BT Serial not available on ESP32-S3");
+}
+#endif
 
 void SparkBTControl::stopBLEServer() {
 

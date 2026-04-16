@@ -1,0 +1,12 @@
+{
+  "buttons": [
+    {"type": "CC", "channel": 0, "data1": 1, "data2": 127, "toggle": true},
+    {"type": "CC", "channel": 0, "data1": 2, "data2": 127, "toggle": true},
+    {"type": "CC", "channel": 0, "data1": 3, "data2": 127, "toggle": true},
+    {"type": "CC", "channel": 0, "data1": 4, "data2": 127, "toggle": true},
+    {"type": "CC", "channel": 0, "data1": 5, "data2": 127, "toggle": true},
+    {"type": "CC", "channel": 0, "data1": 6, "data2": 127, "toggle": true},
+    {"type": "CC", "channel": 0, "data1": 7, "data2": 127, "toggle": true},
+    {"type": "CC", "channel": 0, "data1": 8, "data2": 127, "toggle": true}
+  ]
+}

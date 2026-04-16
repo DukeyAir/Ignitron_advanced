@@ -14,6 +14,10 @@
 #include "SparkPresetControl.h"
 #include <Arduino.h>
 
+#ifdef USE_NEOPIXEL_LEDS
+#include <FastLED.h>
+#endif
+
 using namespace std;
 
 class SparkLEDControl {
@@ -56,6 +60,20 @@ private:
 
     void allLedOff();
     void switchLed(int num, bool on = true, bool fxMode = false);
+
+#ifdef USE_NEOPIXEL_LEDS
+    static CRGB leds_[NEOPIXEL_NUM_LEDS];
+    void neopixelShow();
+    int getLedIndex(int num, bool fxMode);
+
+    // Colors for different states
+    static const CRGB COLOR_PRESET_ACTIVE;
+    static const CRGB COLOR_FX_ON;
+    static const CRGB COLOR_FX_OFF;
+    static const CRGB COLOR_MIDI_ACTIVE;
+    static const CRGB COLOR_TUNER;
+    static const CRGB COLOR_LOOPER;
+#endif
 };
 
 #endif /* SPARKLEDCONTROL_H_ */

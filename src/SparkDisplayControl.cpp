@@ -7,6 +7,73 @@
 
 #include "SparkDisplayControl.h"
 
+#ifdef DISPLAY_DRIVER_TFT
+const int SparkDisplayControl::SCREEN_WIDTH = 320;
+const int SparkDisplayControl::SCREEN_HEIGHT = 170;
+const int SparkDisplayControl::OLED_RESET = -1;
+const int SparkDisplayControl::DISPLAY_MIN_X_FACTOR = -20;
+
+TFT_eSPI SparkDisplayControl::display_ = TFT_eSPI(170, 320);
+TFT_eSprite SparkDisplayControl::sprite_(&display_);
+
+SparkDisplayControl::SparkDisplayControl() : SparkDisplayControl(nullptr) {}
+
+SparkDisplayControl::SparkDisplayControl(SparkDataControl *dc) {
+    sparkDC_ = dc;
+}
+
+SparkDisplayControl::~SparkDisplayControl() {}
+
+void SparkDisplayControl::init(int mode) {
+    display_.init();
+    display_.setRotation(1); // landscape
+    display_.fillScreen(TFT_BLACK);
+    display_.setTextColor(TFT_WHITE, TFT_BLACK);
+    display_.setTextWrap(false);
+
+    // Enable backlight
+    pinMode(38, OUTPUT);
+    digitalWrite(38, HIGH);
+
+    initKeyboardLayoutStrings();
+    showInitialMessage();
+
+    if (sparkDC_->operationMode() == SPARK_MODE_KEYBOARD ||
+        sparkDC_->operationMode() == SPARK_MODE_MIDI) {
+        delay(2000);
+    }
+}
+
+void SparkDisplayControl::showInitialMessage() {
+    display_.fillScreen(TFT_BLACK);
+    display_.setTextSize(3);
+    display_.setTextColor(TFT_CYAN, TFT_BLACK);
+    drawCentreString("IGNITRON", 30);
+
+    display_.setTextSize(2);
+    display_.setTextColor(TFT_WHITE, TFT_BLACK);
+
+    string modeText;
+    switch (sparkDC_->operationMode()) {
+    case SPARK_MODE_APP:
+        modeText = "APP";
+        break;
+    case SPARK_MODE_AMP:
+        modeText = "AMP";
+        break;
+    case SPARK_MODE_KEYBOARD:
+        modeText = "KB";
+        break;
+    case SPARK_MODE_MIDI:
+        modeText = "MIDI";
+        break;
+    }
+    modeText += " v" + VERSION;
+    drawCentreString(modeText.c_str(), 80);
+}
+
+#else
+// Original OLED code
 const int SparkDisplayControl::SCREEN_WIDTH = 128;         // Display width
 const int SparkDisplayControl::SCREEN_HEIGHT = 64;         // Display height
 const int SparkDisplayControl::OLED_RESET = -1;            // Reset pin # (or -1 if sharing Arduino reset pin)
@@ -90,13 +157,48 @@ void SparkDisplayControl::showInitialMessage() {
     case SPARK_MODE_KEYBOARD:
         modeText = "KB";
         break;
+    case SPARK_MODE_MIDI:
+        modeText = "MIDI";
+        break;
     }
     modeText += " v" + VERSION;
 
     drawCentreString(modeText.c_str(), 50);
 }
+#endif // DISPLAY_DRIVER_TFT
 
 void SparkDisplayControl::showBankAndPresetNum() {
+#ifdef DISPLAY_DRIVER_TFT
+    display_.setTextSize(4);
+    display_.setTextColor(TFT_GREEN, TFT_BLACK);
+
+    SparkPresetControl &presetControl = SparkPresetControl::getInstance();
+    int pendingBank = presetControl.pendingBank();
+
+    ostringstream selBankStr;
+    selBankStr << pendingBank;
+    ostringstream selPresetStr;
+    selPresetStr << presetControl.activePresetNum();
+
+    string bankDisplay = "";
+    if (pendingBank < 10) {
+        bankDisplay = "0";
+    }
+    bankDisplay += selBankStr.str();
+    if (pendingBank == 0) {
+        if (presetControl.numberOfHWBanks() == 1) {
+            bankDisplay = "HW";
+        } else {
+            bankDisplay = "H" + to_string(presetControl.pendingHWBank() + 1);
+        }
+    }
+
+    display_.setCursor(10, 5);
+    display_.print(bankDisplay.c_str());
+
+    display_.setCursor(display_.width() - 50, 5);
+    display_.print(selPresetStr.str().c_str());
+#else
 
     // Display the bank and preset number
     display_.setTextColor(WHITE);
@@ -134,9 +236,54 @@ void SparkDisplayControl::showBankAndPresetNum() {
     string presetText = "";
     presetText = selPresetStr.str();
     display_.print(presetText.c_str());
+#endif // DISPLAY_DRIVER_TFT
 }
 
 void SparkDisplayControl::showPresetName() {
+#ifdef DISPLAY_DRIVER_TFT
+    SparkPresetControl &presetControl = SparkPresetControl::getInstance();
+    const string msg = presetControl.responseMsg();
+    int pendingBank = presetControl.pendingBank();
+    int activeBank = presetControl.activeBank();
+
+    uint16_t bgColor = (pendingBank == activeBank) ? TFT_BLACK : TFT_DARKGREY;
+    uint16_t textColor = TFT_WHITE;
+
+    display_.fillRect(0, 55, 320, 35, bgColor);
+    display_.setTextColor(textColor, bgColor);
+    display_.setTextSize(2);
+
+    unsigned long currentMillis = millis();
+    if (msg != "") {
+        previousMillis = millis();
+        primaryLineText = msg;
+        presetControl.resetPresetEditResponse();
+        showMsgFlag = true;
+    }
+    if (showMsgFlag) {
+        display_.setCursor(10, 60);
+        if (currentMillis - previousMillis >= showMessageInterval) {
+            showMsgFlag = false;
+        }
+    } else {
+        display_.setCursor(displayX1_ + 10, 60);
+        if (activeBank != pendingBank) {
+            primaryLinePreset = presetControl.pendingPreset();
+        } else {
+            primaryLinePreset = presetControl.activePreset();
+        }
+        primaryLineText = primaryLinePreset.name;
+        if (primaryLineText != previousText1_) {
+            textRow1Timestamp_ = millis();
+            previousText1_ = primaryLineText;
+            displayX1_ = 0;
+        }
+        if (primaryLineText.length() > 20) {
+            primaryLineText = primaryLineText + textFiller_ + primaryLineText;
+        }
+    }
+    display_.print(primaryLineText.c_str());
+#else
 
     SparkPresetControl &presetControl = SparkPresetControl::getInstance();
     const string msg = presetControl.responseMsg();
@@ -201,6 +348,7 @@ void SparkDisplayControl::showPresetName() {
         }
     }
     display_.print(primaryLineText.c_str());
+#endif // DISPLAY_DRIVER_TFT showPresetName
 }
 void SparkDisplayControl::showFX_SecondaryName() {
     // The last line shows either the FX setup (in APP mode)
@@ -388,6 +536,32 @@ void SparkDisplayControl::showModeModifier() {
 }
 
 void SparkDisplayControl::showConnection() {
+#ifdef DISPLAY_DRIVER_TFT
+    // Show connection in top-right area
+    int xPos = display_.width() - 80;
+    int yPos = 5;
+
+    switch (sparkDC_->currentBTMode()) {
+    case BT_MODE_BLE:
+        currentBTModeText = "BLE";
+        break;
+    case BT_MODE_SERIAL:
+        currentBTModeText = "SRL";
+        break;
+    }
+
+    display_.setTextSize(1);
+    display_.setTextColor(TFT_CYAN, TFT_BLACK);
+    display_.setCursor(xPos, yPos);
+    display_.print(currentBTModeText.c_str());
+
+    bool isBTConnected = sparkDC_->isAmpConnected() || sparkDC_->isAppConnected();
+    if (isBTConnected) {
+        display_.setCursor(xPos + 30, yPos);
+        display_.setTextColor(TFT_GREEN, TFT_BLACK);
+        display_.print("OK");
+    }
+#else
     // Display the Connection symbols
     int xPosSymbol = (display_.width() / 2.0) - 10;
     int yPosSymbol = 9;
@@ -420,6 +594,7 @@ void SparkDisplayControl::showConnection() {
     if (isBTConnected) {
         display_.drawBitmap(xPosSymbol, yPosSymbol, epdBitmapBTLogo, symbolWidth, symbolHeight, WHITE);
     }
+#endif // DISPLAY_DRIVER_TFT
 }
 
 #ifdef ENABLE_BATTERY_STATUS_INDICATOR
@@ -686,6 +861,10 @@ void SparkDisplayControl::showVolumeBar() {
 }
 
 void SparkDisplayControl::checkInvertDisplay(int subMode) {
+#ifdef DISPLAY_DRIVER_TFT
+    // TFT doesn't use display inversion the same way
+    invertedDisplay = (subMode == SUB_MODE_FX);
+#else
     switch (subMode) {
     case SUB_MODE_FX:
         invertedDisplay = true;
@@ -699,12 +878,74 @@ void SparkDisplayControl::checkInvertDisplay(int subMode) {
     }
 
     display_.invertDisplay(invertedDisplay);
+#endif // DISPLAY_DRIVER_TFT
 }
 
 void SparkDisplayControl::update(bool isInitBoot) {
 
     OperationMode opMode = sparkDC_->operationMode();
     SubMode subMode = sparkDC_->subMode();
+
+#ifdef DISPLAY_DRIVER_TFT
+    display_.fillScreen(TFT_BLACK);
+
+    if (opMode == SPARK_MODE_MIDI) {
+        // MIDI mode display
+        display_.setTextSize(3);
+        display_.setTextColor(TFT_MAGENTA, TFT_BLACK);
+        drawCentreString("BLE MIDI", 20);
+        display_.setTextSize(2);
+        display_.setTextColor(TFT_WHITE, TFT_BLACK);
+        drawCentreString("Ready", 70);
+        return;
+    }
+
+    if ((opMode == SPARK_MODE_APP) && isInitBoot) {
+        showInitialMessage();
+    } else if (opMode == SPARK_MODE_KEYBOARD) {
+        if (sparkDC_->keyboardChanged()) {
+            initKeyboardLayoutStrings();
+            sparkDC_->resetKeyboardChangeIndicator();
+        }
+        lastKeyboardButtonPressedString = sparkDC_->lastKeyboardButtonPressedString();
+        showPressedKey();
+        showKeyboardLayout();
+    } else if (subMode == SUB_MODE_TUNER) {
+        SparkStatus &statusObject = SparkStatus::getInstance();
+        currentNote = statusObject.noteString();
+        noteOffsetCents = statusObject.noteOffsetCents();
+        showTunerNote();
+        showTunerOffset();
+        showTunerGraphic();
+    } else {
+        SparkStatus &statusObject = SparkStatus::getInstance();
+        isVolumeChanged = statusObject.isVolumeChanged();
+        if (isVolumeChanged) {
+            volumeChangedTimestamp = millis();
+            statusObject.resetVolumeUpdateFlag();
+        }
+        unsigned int now = millis();
+        if (now - volumeChangedTimestamp <= showVolumeChangedInterval) {
+            showVolumeBar();
+        } else {
+            display_.setTextWrap(false);
+            showConnection();
+#ifdef ENABLE_BATTERY_STATUS_INDICATOR
+            showBatterySymbol();
+#endif
+            showModeModifier();
+            updateTextPositions();
+            showPresetName();
+            if (subMode == SUB_MODE_LOOP_CONTROL || subMode == SUB_MODE_LOOP_CONFIG) {
+                showLooperTimer();
+            } else {
+                showBankAndPresetNum();
+                showFX_SecondaryName();
+            }
+        }
+    }
+
+#else
     display_.clearDisplay();
     checkInvertDisplay(subMode);
 
@@ -759,6 +1000,7 @@ void SparkDisplayControl::update(bool isInitBoot) {
     }
     // logDisplay();
     display_.display();
+#endif // DISPLAY_DRIVER_TFT
 }
 
 void SparkDisplayControl::updateTextPositions() {
@@ -797,6 +1039,12 @@ void SparkDisplayControl::updateTextPositions() {
 
 void SparkDisplayControl::drawCentreString(const char *buf,
                                            int y, int offset) {
+#ifdef DISPLAY_DRIVER_TFT
+    int w = display_.textWidth(buf);
+    int displayMid = display_.width() / 2;
+    display_.setCursor(displayMid - w / 2 + offset, y);
+    display_.print(buf);
+#else
     int16_t x1, y1;
     uint16_t w, h;
     int displayMid = display_.width() / 2;
@@ -804,10 +1052,17 @@ void SparkDisplayControl::drawCentreString(const char *buf,
     display_.getTextBounds(buf, displayMid, y, &x1, &y1, &w, &h); // calc width of new string
     display_.setCursor(displayMid - w / 2 + offset, y);
     display_.print(buf);
+#endif
 }
 
 void SparkDisplayControl::drawRightAlignedString(const char *buf,
                                                  int y, int offset) {
+#ifdef DISPLAY_DRIVER_TFT
+    int w = display_.textWidth(buf);
+    int displayWidth = display_.width();
+    display_.setCursor(displayWidth - w + offset, y);
+    display_.print(buf);
+#else
     int16_t x1, y1;
     uint16_t w, h;
     int x = 0;
@@ -816,6 +1071,7 @@ void SparkDisplayControl::drawRightAlignedString(const char *buf,
     display_.getTextBounds(buf, x, y, &x1, &y1, &w, &h); // calc width of new string
     display_.setCursor(displayWidth - w + offset, y);
     display_.print(buf);
+#endif
 }
 
 void SparkDisplayControl::drawTunerTriangleCentre(int x, int size, bool dir, int color) {

@@ -120,6 +120,10 @@ OperationMode SparkDataControl::init(OperationMode opModeInput) {
         bleKeyboard.setName("Ignitron BLE");
         bleKeyboard.begin();
         break;
+    case SPARK_MODE_MIDI:
+        // BLE MIDI is initialized separately in Ignitron.ino
+        // Nothing to do here for Spark-specific init
+        break;
     }
 
     return operationMode_;

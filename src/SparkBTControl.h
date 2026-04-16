@@ -11,7 +11,9 @@
 #include "Config_Definitions.h"
 #include "SparkTypes.h"
 #include <Arduino.h>
+#ifndef BOARD_LILYGO_T_DISPLAY_S3
 #include <BluetoothSerial.h>
+#endif
 #include <NimBLEDevice.h>
 #include <string>
 #include <vector>
@@ -161,15 +163,19 @@ public:
     void stopBTSerial();
 
     bool byteAvailable() {
+#ifndef BOARD_LILYGO_T_DISPLAY_S3
         if (btSerial != NULL) {
             return btSerial->available();
         } else
+#endif
             return false;
     }
     byte readByte() {
+#ifndef BOARD_LILYGO_T_DISPLAY_S3
         if (btSerial != NULL) {
             return btSerial->read();
         } else
+#endif
             return false;
     }
 
@@ -188,7 +194,9 @@ private:
     NimBLEAdvertisedDevice *advDevice_;
     NimBLEClient *client_ = nullptr;
 
+#ifndef BOARD_LILYGO_T_DISPLAY_S3
     BluetoothSerial *btSerial = nullptr;
+#endif
     const string btNameBle = "Spark 40 BLE";      // Spark 40 BLE
     const string btNameSerial = "Spark 40 Audio"; // Spark 40 Audio
 
@@ -223,7 +231,11 @@ private:
     void onConnect(NimBLEServer *server, ble_gap_conn_desc *desc);
     void onDisconnect(NimBLEServer *server);
 
+#ifndef BOARD_LILYGO_T_DISPLAY_S3
     static void serialCallback(esp_spp_cb_event_t event, esp_spp_cb_param_t *param);
+#else
+    static void serialCallback(int event, void *param) {} // stub
+#endif
 
     int notificationCount = 0;
 };

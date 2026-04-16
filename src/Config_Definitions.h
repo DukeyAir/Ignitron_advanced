@@ -99,14 +99,16 @@ enum BatteryChargingStatus {
 
 #endif
 
-// OLED Driver config
-// By default an SSD1306 driver is used which is most common for 0.96" 128x64 OLED displays
-// 1.3" OLED 128x64 displays commonly uses an SH1106 driver.
-// Choose driver below, only one can be defined!
-
+// Display driver config
+// For standard ESP32 boards: SSD1306 (0.96"), SH1106 (1.3"), SH1107 OLED
+// For T-Display S3: TFT ST7789 (built-in 1.9" 170x320 color display)
+#ifdef BOARD_LILYGO_T_DISPLAY_S3
+#define DISPLAY_DRIVER_TFT
+#else
 #define OLED_DRIVER_SSD1306
 // #define OLED_DRIVER_SH1106
 // #define OLED_DRIVER_SH1107
+#endif
 
 // Optional setting for enabling Blink mode when in Manual/FX mode.
 // Depending on the user preferences enabling blink can be a help
@@ -115,6 +117,38 @@ enum BatteryChargingStatus {
 const bool ENABLE_FX_BLINK = false;
 
 // Button GPIOs
+#ifdef BOARD_LILYGO_T_DISPLAY_S3
+// Pedalino Mini default wiring for T-Display S3
+// 8 switches: GPIO 11, 12, 13, 16, 17, 18, 14, 0
+enum ButtonGpio {
+    BUTTON_PRESET1_GPIO = 11,
+    BUTTON_DRIVE_GPIO = 11,
+
+    BUTTON_PRESET2_GPIO = 12,
+    BUTTON_MOD_GPIO = 12,
+
+    BUTTON_PRESET3_GPIO = 13,
+    BUTTON_DELAY_GPIO = 13,
+
+    BUTTON_PRESET4_GPIO = 16,
+    BUTTON_REVERB_GPIO = 16,
+
+    BUTTON_BANK_DOWN_GPIO = 17,
+    BUTTON_NOISEGATE_GPIO = 17,
+
+    BUTTON_BANK_UP_GPIO = 18,
+    BUTTON_COMP_GPIO = 18,
+
+    BUTTON_EXTRA1_GPIO = 14,
+    BUTTON_EXTRA2_GPIO = 0
+};
+
+// Analog input pins (expression pedals)
+const int ANALOG_INPUT_1_PIN = 1;
+const int ANALOG_INPUT_2_PIN = 2;
+
+#else
+// Standard ESP32 boards
 enum ButtonGpio {
     BUTTON_PRESET1_GPIO = 25,
     BUTTON_DRIVE_GPIO = 25,
@@ -134,12 +168,60 @@ enum ButtonGpio {
     BUTTON_BANK_UP_GPIO = 18,
     BUTTON_COMP_GPIO = 18
 };
+#endif
 
 // Button long press time
 const int LONG_BUTTON_PRESS_TIME = 1000;
 
-// LED GPIOs
+// LED config
 
+#ifdef BOARD_LILYGO_T_DISPLAY_S3
+// NeoPixel/WS2812B LEDs on a single data pin
+#define USE_NEOPIXEL_LEDS
+const int NEOPIXEL_DATA_PIN = 21;
+const int NEOPIXEL_NUM_LEDS = 8;
+
+// LED indices in the NeoPixel chain (0-based)
+enum LedIndex {
+    LED_IDX_PRESET1 = 0,
+    LED_IDX_PRESET2 = 1,
+    LED_IDX_PRESET3 = 2,
+    LED_IDX_PRESET4 = 3,
+    LED_IDX_BANK_DOWN = 4,
+    LED_IDX_BANK_UP = 5,
+    LED_IDX_EXTRA1 = 6,
+    LED_IDX_EXTRA2 = 7,
+
+    // Aliases for FX mode
+    LED_IDX_DRIVE = 0,
+    LED_IDX_MOD = 1,
+    LED_IDX_DELAY = 2,
+    LED_IDX_REVERB = 3,
+    LED_IDX_NOISEGATE = 4,
+    LED_IDX_COMP = 5,
+
+    LED_IDX_INVALID = -1
+};
+
+// Dummy LedGpio enum for compatibility with non-NeoPixel code paths
+enum LedGpio {
+    LED_DRIVE_GPIO = -1,
+    LED_MOD_GPIO = -1,
+    LED_DELAY_GPIO = -1,
+    LED_REVERB_GPIO = -1,
+    LED_NOISEGATE_GPIO = -1,
+    LED_COMP_GPIO = -1,
+    LED_PRESET1_GPIO = -1,
+    LED_PRESET2_GPIO = -1,
+    LED_PRESET3_GPIO = -1,
+    LED_PRESET4_GPIO = -1,
+    LED_BANK_DOWN_GPIO = -1,
+    LED_BANK_UP_GPIO = -1,
+    LED_GPIO_INVALID = -1
+};
+
+#else
+// Standard ESP32 boards: individual GPIO LEDs
 // If the optional DEDICATED_PRESET_LEDS is defined below it will
 // slightly alter the behaviour of Ignitron to make the FX and
 // PRESET LEDs work independently. Also the bottom  line in the
@@ -201,6 +283,7 @@ enum LedOptionalGpio {
     OPTIONAL_GPIO_4 = 15
 };
 #endif
+#endif // BOARD_LILYGO_T_DISPLAY_S3
 
 // LED/Button numbering
 enum FxLedButtonNumber {
@@ -220,6 +303,10 @@ enum PresetLedButtonNum {
     PRESET4_NUM = 4,
     BANK_DOWN_NUM = 5,
     BANK_UP_NUM = 6,
+#ifdef BOARD_LILYGO_T_DISPLAY_S3
+    EXTRA1_NUM = 7,
+    EXTRA2_NUM = 8,
+#endif
     INVALID_PRESET_BUTTON_NUM = -1
 };
 
@@ -250,7 +337,8 @@ enum SubMode {
 enum OperationMode {
     SPARK_MODE_APP = 1,
     SPARK_MODE_AMP,
-    SPARK_MODE_KEYBOARD
+    SPARK_MODE_KEYBOARD,
+    SPARK_MODE_MIDI
 };
 
 enum BTMode {
@@ -292,5 +380,33 @@ enum LooperLedID {
     SPK_LOOPER_UNDO_REDO_LED_ID = 3,
     SPK_LOOPER_BPM_LED_ID = 5
 };
+
+// BLE MIDI button configuration
+// Each button can send a configurable MIDI message
+enum MidiMessageType {
+    MIDI_MSG_NOTE_ON = 0x90,
+    MIDI_MSG_NOTE_OFF = 0x80,
+    MIDI_MSG_CC = 0xB0,
+    MIDI_MSG_PROGRAM_CHANGE = 0xC0
+};
+
+struct MidiButtonConfig {
+    MidiMessageType messageType;
+    byte channel;   // 0-15
+    byte data1;     // note number or CC number or program number
+    byte data2;     // velocity or CC value (ignored for PC)
+    bool toggle;    // true = toggle on/off, false = momentary
+    bool state;     // current toggle state (runtime only, not saved)
+};
+
+// Default MIDI channel
+const byte MIDI_DEFAULT_CHANNEL = 0;
+
+// Number of configurable MIDI buttons
+#ifdef BOARD_LILYGO_T_DISPLAY_S3
+const int MIDI_NUM_BUTTONS = 8;
+#else
+const int MIDI_NUM_BUTTONS = 6;
+#endif
 
 #endif /* CONFIG_DEFINITIONS_H_ */

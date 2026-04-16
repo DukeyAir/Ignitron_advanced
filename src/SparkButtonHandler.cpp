@@ -15,6 +15,12 @@ BfButton SparkButtonHandler::btn_preset4_(BfButton::STANDALONE_DIGITAL, BUTTON_P
 BfButton SparkButtonHandler::btn_bank_down_(BfButton::STANDALONE_DIGITAL, BUTTON_BANK_DOWN_GPIO, false, HIGH);
 BfButton SparkButtonHandler::btn_bank_up_(BfButton::STANDALONE_DIGITAL, BUTTON_BANK_UP_GPIO, false, HIGH);
 
+#ifdef BOARD_LILYGO_T_DISPLAY_S3
+BfButton SparkButtonHandler::btn_extra1_(BfButton::STANDALONE_DIGITAL, BUTTON_EXTRA1_GPIO, false, HIGH);
+BfButton SparkButtonHandler::btn_extra2_(BfButton::STANDALONE_DIGITAL, BUTTON_EXTRA2_GPIO, false, HIGH);
+SparkMidiControl *SparkButtonHandler::midiControl_ = nullptr;
+#endif
+
 // Initialize SparkDataControl;
 SparkDataControl *SparkButtonHandler::spark_dc_ = nullptr;
 SparkPresetControl &SparkButtonHandler::presetControl_ = SparkPresetControl::getInstance();
@@ -36,6 +42,10 @@ void SparkButtonHandler::readButtons() {
     btn_preset4_.read();
     btn_bank_up_.read();
     btn_bank_down_.read();
+#ifdef BOARD_LILYGO_T_DISPLAY_S3
+    btn_extra1_.read();
+    btn_extra2_.read();
+#endif
 }
 
 OperationMode SparkButtonHandler::checkBootOperationMode() {
@@ -46,6 +56,10 @@ OperationMode SparkButtonHandler::checkBootOperationMode() {
         operationMode = SPARK_MODE_AMP;
     } else if (digitalRead(BUTTON_PRESET3_GPIO) == HIGH) {
         operationMode = SPARK_MODE_KEYBOARD;
+#ifdef BOARD_LILYGO_T_DISPLAY_S3
+    } else if (digitalRead(BUTTON_PRESET4_GPIO) == HIGH) {
+        operationMode = SPARK_MODE_MIDI;
+#endif
     } else { // default mode: APP
         operationMode = SPARK_MODE_APP;
     }
@@ -89,6 +103,11 @@ void SparkButtonHandler::configureButtons() {
     case SPARK_MODE_KEYBOARD:
         configureKeyboardButtons();
         break;
+#ifdef BOARD_LILYGO_T_DISPLAY_S3
+    case SPARK_MODE_MIDI:
+        configureMidiButtons();
+        break;
+#endif
     }
 }
 
@@ -594,3 +613,78 @@ void SparkButtonHandler::btnKeyboardSwitchHandler(BfButton *btn, BfButton::press
         currentKeyboard_ = spark_dc_->nextKeyboard();
     }
 }
+
+#ifdef BOARD_LILYGO_T_DISPLAY_S3
+void SparkButtonHandler::configureMidiButtons() {
+    // All 8 buttons send MIDI messages in MIDI mode
+    btn_preset1_.onPress(btnMidiHandler);
+    btn_preset2_.onPress(btnMidiHandler);
+    btn_preset3_.onPress(btnMidiHandler);
+    btn_preset4_.onPress(btnMidiHandler);
+    btn_bank_down_.onPress(btnMidiHandler);
+    btn_bank_up_.onPress(btnMidiHandler);
+    btn_extra1_.onPress(btnMidiHandler);
+    btn_extra2_.onPress(btnMidiHandler);
+
+    // Long press on extra2: reset to APP mode
+    btn_extra2_.onPressFor(btnResetHandler, LONG_BUTTON_PRESS_TIME);
+}
+
+void SparkButtonHandler::btnMidiHandler(BfButton *btn, BfButton::press_pattern_t pattern) {
+    if (!midiControl_) {
+        Serial.println("MidiControl not setup, ignoring button press.");
+        return;
+    }
+
+    ButtonGpio pressed_btn_gpio = (ButtonGpio)btn->getID();
+    int buttonIndex = -1;
+
+    // Map GPIO to button index 0-7
+    switch (pressed_btn_gpio) {
+    case BUTTON_PRESET1_GPIO:
+        buttonIndex = 0;
+        break;
+    case BUTTON_PRESET2_GPIO:
+        buttonIndex = 1;
+        break;
+    case BUTTON_PRESET3_GPIO:
+        buttonIndex = 2;
+        break;
+    case BUTTON_PRESET4_GPIO:
+        buttonIndex = 3;
+        break;
+    case BUTTON_BANK_DOWN_GPIO:
+        buttonIndex = 4;
+        break;
+    case BUTTON_BANK_UP_GPIO:
+        buttonIndex = 5;
+        break;
+    case BUTTON_EXTRA1_GPIO:
+        buttonIndex = 6;
+        break;
+    case BUTTON_EXTRA2_GPIO:
+        buttonIndex = 7;
+        break;
+    default:
+        return;
+    }
+
+    midiControl_->handleButtonPress(buttonIndex);
+}
+
+void SparkButtonHandler::btnExtraHandler(BfButton *btn, BfButton::press_pattern_t pattern) {
+    if (!spark_dc_) {
+        return;
+    }
+
+    ButtonGpio pressed_btn_gpio = (ButtonGpio)btn->getID();
+
+    if (pressed_btn_gpio == BUTTON_EXTRA1_GPIO) {
+        // Extra1: toggle sub mode in APP mode
+        if (spark_dc_->operationMode() == SPARK_MODE_APP) {
+            spark_dc_->toggleSubMode();
+            configureButtons();
+        }
+    }
+}
+#endif // BOARD_LILYGO_T_DISPLAY_S3

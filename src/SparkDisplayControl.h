@@ -9,8 +9,19 @@
 #define SPARKDISPLAYCONTROL_H_
 
 #include "Config_Definitions.h"
-#include <Adafruit_GFX.h>
 
+#ifdef DISPLAY_DRIVER_TFT
+#include <FS.h>
+#include <TFT_eSPI.h>
+// Map Adafruit-style constants for compatibility
+#ifndef WHITE
+#define WHITE TFT_WHITE
+#endif
+#ifndef BLACK
+#define BLACK TFT_BLACK
+#endif
+#else
+#include <Adafruit_GFX.h>
 // Definition of OLED driver in Config_Definitions.h
 #if defined(OLED_DRIVER_SSD1306)
 #include <Adafruit_SSD1306.h> //https://github.com/adafruit/Adafruit_SSD1306
@@ -19,6 +30,7 @@
 #define WHITE SH110X_WHITE
 #define BLACK SH110X_BLACK
 #endif
+#endif // DISPLAY_DRIVER_TFT
 
 #include "SparkDataControl.h"
 #include "SparkLooperControl.h"
@@ -52,7 +64,10 @@ private:
     const int kSplashImageWidth = 128;
     const int kSplashImageHeight = 47;
 
-#if defined(OLED_DRIVER_SSD1306)
+#ifdef DISPLAY_DRIVER_TFT
+    static TFT_eSPI display_;
+    static TFT_eSprite sprite_;
+#elif defined(OLED_DRIVER_SSD1306)
     static Adafruit_SSD1306 display_;
 #elif defined(OLED_DRIVER_SH1106)
     static Adafruit_SH1106G display_;
