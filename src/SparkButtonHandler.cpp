@@ -8,12 +8,22 @@
 #include "SparkButtonHandler.h"
 
 // Intialize buttons
+#ifdef BOARD_LILYGO_T_DISPLAY_S3
+// Buttons switch to ground: use internal pullup, active LOW
+BfButton SparkButtonHandler::btn_preset1_(BfButton::STANDALONE_DIGITAL, BUTTON_PRESET1_GPIO, true, LOW);
+BfButton SparkButtonHandler::btn_preset2_(BfButton::STANDALONE_DIGITAL, BUTTON_PRESET2_GPIO, true, LOW);
+BfButton SparkButtonHandler::btn_preset3_(BfButton::STANDALONE_DIGITAL, BUTTON_PRESET3_GPIO, true, LOW);
+BfButton SparkButtonHandler::btn_preset4_(BfButton::STANDALONE_DIGITAL, BUTTON_PRESET4_GPIO, true, LOW);
+BfButton SparkButtonHandler::btn_bank_down_(BfButton::STANDALONE_DIGITAL, BUTTON_BANK_DOWN_GPIO, true, LOW);
+BfButton SparkButtonHandler::btn_bank_up_(BfButton::STANDALONE_DIGITAL, BUTTON_BANK_UP_GPIO, true, LOW);
+#else
 BfButton SparkButtonHandler::btn_preset1_(BfButton::STANDALONE_DIGITAL, BUTTON_PRESET1_GPIO, false, HIGH);
 BfButton SparkButtonHandler::btn_preset2_(BfButton::STANDALONE_DIGITAL, BUTTON_PRESET2_GPIO, false, HIGH);
 BfButton SparkButtonHandler::btn_preset3_(BfButton::STANDALONE_DIGITAL, BUTTON_PRESET3_GPIO, false, HIGH);
 BfButton SparkButtonHandler::btn_preset4_(BfButton::STANDALONE_DIGITAL, BUTTON_PRESET4_GPIO, false, HIGH);
 BfButton SparkButtonHandler::btn_bank_down_(BfButton::STANDALONE_DIGITAL, BUTTON_BANK_DOWN_GPIO, false, HIGH);
 BfButton SparkButtonHandler::btn_bank_up_(BfButton::STANDALONE_DIGITAL, BUTTON_BANK_UP_GPIO, false, HIGH);
+#endif
 
 // Initialize SparkDataControl;
 SparkDataControl *SparkButtonHandler::spark_dc_ = nullptr;
@@ -41,11 +51,25 @@ void SparkButtonHandler::readButtons() {
 OperationMode SparkButtonHandler::checkBootOperationMode() {
 
     OperationMode operationMode;
+
+#ifdef BOARD_LILYGO_T_DISPLAY_S3
+    // Buttons switch to ground: use internal pullup, pressed = LOW
+    pinMode(BUTTON_PRESET2_GPIO, INPUT_PULLUP);
+    pinMode(BUTTON_PRESET3_GPIO, INPUT_PULLUP);
+    delay(10);
+
+    // AMP mode when Preset 2 is pressed during startup
+    if (digitalRead(BUTTON_PRESET2_GPIO) == LOW) {
+        operationMode = SPARK_MODE_AMP;
+    } else if (digitalRead(BUTTON_PRESET3_GPIO) == LOW) {
+        operationMode = SPARK_MODE_KEYBOARD;
+#else
     // AMP mode when Preset 1 is pressed during startup
     if (digitalRead(BUTTON_PRESET1_GPIO) == HIGH) {
         operationMode = SPARK_MODE_AMP;
     } else if (digitalRead(BUTTON_PRESET3_GPIO) == HIGH) {
         operationMode = SPARK_MODE_KEYBOARD;
+#endif
     } else { // default mode: APP
         operationMode = SPARK_MODE_APP;
     }

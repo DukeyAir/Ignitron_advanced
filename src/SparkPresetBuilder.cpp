@@ -187,7 +187,7 @@ void SparkPresetBuilder::initializePresetListFromFS() {
         }
     }
     if (tmpVector.size() > 0) {
-        while (tmpVector.size() < 4) {
+        while (tmpVector.size() < PRESETS_PER_BANK) {
             Serial.println("Last bank not full, filling with last preset to get bank complete");
             tmpVector.push_back(tmpVector.back());
         }
@@ -287,6 +287,16 @@ const int SparkPresetBuilder::getNumberOfBanks() const {
 PresetStoreResult SparkPresetBuilder::storePreset(Preset newPreset, int bnk, int pre) {
     string presetNamePrefix = newPreset.name;
     string presetUUID = newPreset.uuid;
+
+    Serial.printf("storePreset: name='%s' uuid='%s' json=%d bnk=%d pre=%d empty=%d\n",
+                  presetNamePrefix.c_str(), presetUUID.c_str(),
+                  (int)newPreset.json.length(), bnk, pre, newPreset.isEmpty);
+
+    if (newPreset.isEmpty || newPreset.json.empty()) {
+        Serial.println("ERROR: Preset is empty, nothing to store");
+        return STORE_PRESET_ERROR_EMPTY_INPUT;
+    }
+
     if (presetNamePrefix == "null" || presetNamePrefix.empty()) {
         presetNamePrefix = "Preset";
     }
@@ -298,19 +308,36 @@ PresetStoreResult SparkPresetBuilder::storePreset(Preset newPreset, int bnk, int
     string filestrPresetUUID = "";
     string oldListFile;
     int lineCount = 1;
-    int insertPosition = 4 * (bnk - 1) + pre;
+    int insertPosition = PRESETS_PER_BANK * (bnk - 1) + pre;
 
     File presetListFile;
     File presetUUIDListFile;
     presetUUIDListFile = LittleFS.open(presetListUUIDFileName);
     if (!presetUUIDListFile) {
-        Serial.println("ERROR while trying to open presets list file");
-        return STORE_PRESET_ERROR_OPEN;
+        Serial.println("ERROR while trying to open presets list file, attempting to create it");
+        buildPresetUUIDs();
+        presetUUIDListFile = LittleFS.open(presetListUUIDFileName);
+        if (!presetUUIDListFile) {
+            Serial.println("ERROR: Still cannot open presets list file after rebuild");
+            return STORE_PRESET_ERROR_OPEN_READ;
+        }
     }
 
     string fileContent;
     if (presetUUIDListFile) {
         size_t size = presetUUIDListFile.size();
+        Serial.printf("PresetListUUIDs.txt size: %d\n", size);
+        if (size == 0 && getNumberOfBanks() > 0) {
+            // File exists but is empty — rebuild it from presetBanksNames
+            Serial.println("PresetListUUIDs.txt is empty, rebuilding...");
+            presetUUIDListFile.close();
+            buildPresetUUIDs();
+            presetUUIDListFile = LittleFS.open(presetListUUIDFileName);
+            if (presetUUIDListFile) {
+                size = presetUUIDListFile.size();
+                Serial.printf("After rebuild: size=%d\n", size);
+            }
+        }
         if (size > 0) {
             fileContent.reserve(size);
             std::unique_ptr<char[]> buf(new char[size + 1]);
@@ -318,6 +345,7 @@ PresetStoreResult SparkPresetBuilder::storePreset(Preset newPreset, int bnk, int
             buf[size] = '\0';
             fileContent.assign(buf.get(), size);
         }
+        presetUUIDListFile.close();
     }
 
     stringstream stream(fileContent);
@@ -331,11 +359,11 @@ PresetStoreResult SparkPresetBuilder::storePreset(Preset newPreset, int bnk, int
             // Lines starting with '-' and empty lines
             // are ignored and can be used for comments in the file
             if (line.rfind("-", 0) != 0 && !line.empty()) {
-                if (((lineCount - 1) % 4) == 0) {
+                if (((lineCount - 1) % PRESETS_PER_BANK) == 0) {
                     // New bank separator addd to file for better readability
                     char bankString[20] = "";
                     int size = sizeof bankString;
-                    snprintf(bankString, size, "%d ", ((lineCount - 1) / 4) + 1);
+                    snprintf(bankString, size, "%d ", ((lineCount - 1) / PRESETS_PER_BANK) + 1);
                     filestrPreset += "-- Bank ";
                     filestrPreset += bankString;
                     filestrPreset += "\n";
@@ -353,21 +381,35 @@ PresetStoreResult SparkPresetBuilder::storePreset(Preset newPreset, int bnk, int
             lineCount++;
         }
     }
+    // If the new preset was never inserted (file empty or fewer lines than insertPosition),
+    // append it now
+    if (filestrPreset.find(presetFileName) == string::npos) {
+        Serial.println("Preset not inserted during loop, appending");
+        filestrPreset += presetFileName + "\n";
+        filestrPresetUUID += presetFileName + " " + presetUUID + "\n";
+    }
+    Serial.printf("storePreset: insertPos=%d lineCount=%d presetStr=%d uuidStr=%d\n",
+                  insertPosition, lineCount, (int)filestrPreset.length(), (int)filestrPresetUUID.length());
+
     presetListFile = LittleFS.open(presetListFileName, FILE_WRITE);
     presetUUIDListFile = LittleFS.open(presetListUUIDFileName, FILE_WRITE);
     if (!presetListFile || !presetUUIDListFile) {
         Serial.println("ERROR while trying to open presets list files for writing.");
-        return STORE_PRESET_ERROR_OPEN;
+        return STORE_PRESET_ERROR_OPEN_WRITE;
     }
-    bool success = presetListFile.print(filestrPreset.c_str()) && presetUUIDListFile.print(filestrPresetUUID.c_str());
+    size_t w1 = presetListFile.print(filestrPreset.c_str());
+    size_t w2 = presetUUIDListFile.print(filestrPresetUUID.c_str());
     presetListFile.close();
     presetUUIDListFile.close();
-    if (success) {
+    Serial.printf("storePreset: wrote %d + %d bytes\n", w1, w2);
+    if (w1 > 0 && w2 > 0) {
         Serial.printf("Successfully stored new preset to %d-%d\n", bnk, pre);
         initializePresetListFromFS();
         return STORE_PRESET_OK;
     }
-    return STORE_PRESET_UNKNOWN_ERROR;
+    Serial.printf("ERROR: Failed to write preset files (preset=%d, uuid=%d)\n",
+                  (int)filestrPreset.length(), (int)filestrPresetUUID.length());
+    return STORE_PRESET_ERROR_WRITE;
 }
 
 PresetDeleteResult SparkPresetBuilder::deletePreset(int bnk, int pre) {
@@ -381,7 +423,7 @@ PresetDeleteResult SparkPresetBuilder::deletePreset(int bnk, int pre) {
     string presetFileToDelete = "";
     int lineCount = 1;
     int presetCount = 1;
-    int deletePosition = 4 * (bnk - 1) + pre;
+    int deletePosition = PRESETS_PER_BANK * (bnk - 1) + pre;
     presetListUUIDFile = LittleFS.open(presetListUUIDFileName);
     if (!presetListUUIDFile) {
         Serial.println("ERROR while trying to open presets list file");
@@ -413,11 +455,11 @@ PresetDeleteResult SparkPresetBuilder::deletePreset(int bnk, int pre) {
             // are ignored and can be used for comments in the file
             if (line.rfind("-", 0) != 0 && !line.empty()) {
                 stringstream(line) >> preset >> uuid;
-                if (((lineCount - 1) % 4) == 0) {
+                if (((lineCount - 1) % PRESETS_PER_BANK) == 0) {
                     // New bank separator added to file for better readability
                     char bankString[20] = "";
                     int size = sizeof bankString;
-                    snprintf(bankString, size, "%d ", ((lineCount - 1) / 4) + 1);
+                    snprintf(bankString, size, "%d ", ((lineCount - 1) / PRESETS_PER_BANK) + 1);
                     filestrPreset += "-- Bank ";
                     filestrPreset += bankString;
                     filestrPreset += "\n";

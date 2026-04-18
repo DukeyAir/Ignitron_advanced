@@ -486,9 +486,13 @@ void SparkPresetControl::processStorePresetRequest(int presetNum) {
     responseMsg_ = "";
     if (presetEditMode_ == PRESET_EDIT_STORE) {
         if (presetNumToEdit_ == presetNum && presetBankToEdit_ == pendingBank_) {
+            Serial.printf("processStore: bnk=%d pre=%d appPreset.empty=%d json=%d\n",
+                          pendingBank_, presetNum, appReceivedPreset_.isEmpty,
+                          (int)appReceivedPreset_.json.length());
             PresetStoreResult responseCode;
             responseCode = presetBuilder.storePreset(appReceivedPreset_,
                                                      pendingBank_, presetNum);
+            Serial.printf("storePreset returned: %d\n", responseCode);
             if (responseCode == STORE_PRESET_OK) {
                 Serial.println("Successfully stored preset");
                 resetPresetEdit(true, true);
@@ -502,8 +506,17 @@ void SparkPresetControl::processStorePresetRequest(int presetNum) {
             if (responseCode == STORE_PRESET_FILE_EXISTS) {
                 responseMsg_ = "PRST EXIST";
             }
-            if (responseCode == STORE_PRESET_ERROR_OPEN || responseCode == STORE_PRESET_UNKNOWN_ERROR) {
-                responseMsg_ = "SAVE ERROR";
+            if (responseCode == STORE_PRESET_ERROR_OPEN_READ) {
+                responseMsg_ = "ERR:OPENR";
+            }
+            if (responseCode == STORE_PRESET_ERROR_OPEN_WRITE) {
+                responseMsg_ = "ERR:OPENW";
+            }
+            if (responseCode == STORE_PRESET_ERROR_WRITE) {
+                responseMsg_ = "ERR:WRITE";
+            }
+            if (responseCode == STORE_PRESET_ERROR_EMPTY_INPUT) {
+                responseMsg_ = "ERR:NOPRST";
             }
         } else {
             activePresetNum_ = presetNum;

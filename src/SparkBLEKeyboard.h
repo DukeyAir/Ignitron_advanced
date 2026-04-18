@@ -8,6 +8,9 @@
 #ifndef SPARKBLEKEYBOARD_H_
 #define SPARKBLEKEYBOARD_H_
 
+#include "Config_Definitions.h"
+
+#ifndef BOARD_LILYGO_T_DISPLAY_S3
 
 #include <Arduino.h>
 #include <BleKeyboard.h>
@@ -23,5 +26,7 @@ public:
 	void start();
 	void end();
 };
+
+#endif // !BOARD_LILYGO_T_DISPLAY_S3
 
 #endif /* SPARKBLEKEYBOARD_H_ */

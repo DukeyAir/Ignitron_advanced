@@ -15,9 +15,12 @@ SparkMessage SparkDataControl::sparkMsg;
 SparkDisplayControl *SparkDataControl::sparkDisplay = nullptr;
 SparkKeyboardControl *SparkDataControl::keyboardControl = nullptr;
 SparkLooperControl SparkDataControl::looperControl_;
+#ifndef BOARD_LILYGO_T_DISPLAY_S3
 SparkBLEKeyboard SparkDataControl::bleKeyboard = SparkBLEKeyboard();
+#endif
 
 queue<ByteVector> SparkDataControl::msgQueue;
+SemaphoreHandle_t SparkDataControl::msgQueueMutex = xSemaphoreCreateMutex();
 deque<CmdData> SparkDataControl::currentCommand;
 deque<AckData> SparkDataControl::pendingLooperAcks;
 
@@ -75,7 +78,12 @@ OperationMode SparkDataControl::init(OperationMode opModeInput) {
 
     tapEntries = CircularBuffer(tapEntrySize);
 
-    readOpModeFromFile();
+    // Only read saved mode from file if no button was pressed at boot (default APP mode)
+#ifndef BOARD_LILYGO_T_DISPLAY_S3
+    if (opModeInput == SPARK_MODE_APP) {
+        readOpModeFromFile();
+    }
+#endif
     SparkPresetControl::getInstance().init();
 
     // Define MAC address required for keyboard
@@ -83,6 +91,7 @@ OperationMode SparkDataControl::init(OperationMode opModeInput) {
 
     switch (operationMode_) {
     case SPARK_MODE_APP:
+#ifndef BOARD_LILYGO_T_DISPLAY_S3
         // Set MAC address for BLE keyboard
         esp_base_mac_addr_set(&macKeyboard[0]);
 
@@ -91,6 +100,7 @@ OperationMode SparkDataControl::init(OperationMode opModeInput) {
         bleKeyboard.begin();
         // delay(2000);
         bleKeyboard.end();
+#endif
         bleControl->initBLE(&bleNotificationCallback);
         DEBUG_PRINTLN("Starting regular check for empty HW presets.");
 
@@ -105,20 +115,29 @@ OperationMode SparkDataControl::init(OperationMode opModeInput) {
         break;
     case SPARK_MODE_AMP:
         readBTModeFromFile();
+#ifdef BOARD_LILYGO_T_DISPLAY_S3
+        // S3 has no classic Bluetooth, force BLE
+        currentBTMode_ = BT_MODE_BLE;
+#endif
         if (currentBTMode_ == BT_MODE_BLE) {
             bleControl->startServer();
-        } else if (currentBTMode_ == BT_MODE_SERIAL) {
+        }
+#ifndef BOARD_LILYGO_T_DISPLAY_S3
+        else if (currentBTMode_ == BT_MODE_SERIAL) {
             bleControl->startBTSerial();
         }
+#endif
         readPresetChecksums();
         break;
     case SPARK_MODE_KEYBOARD:
+#ifndef BOARD_LILYGO_T_DISPLAY_S3
         // Set MAC address for BLE keyboard
         esp_base_mac_addr_set(&macKeyboard[0]);
 
         // initialize BLE
         bleKeyboard.setName("Ignitron BLE");
         bleKeyboard.begin();
+#endif
         break;
     }
 
@@ -127,11 +146,13 @@ OperationMode SparkDataControl::init(OperationMode opModeInput) {
 
 void SparkDataControl::switchSubMode(SubMode subMode) {
     // TODO: Check if that works fine
+#ifndef BOARD_LILYGO_T_DISPLAY_S3
     if (subMode == SUB_MODE_LOOPER) {
         bleKeyboard.start();
     } else {
         bleKeyboard.end();
     }
+#endif
     // Switch off tuner mode at amp if was enabled before but is not matching current subMode
     if (subMode_ == SUB_MODE_TUNER && subMode_ != subMode) {
         switchTuner(false);
@@ -266,13 +287,28 @@ void SparkDataControl::readOpModeFromFile() {
 
 void SparkDataControl::readBTModeFromFile() {
     string line;
+    if (!LittleFS.exists(btModeFileName.c_str())) {
+        Serial.println("BT mode file does not exist, defaulting to BLE.");
+        currentBTMode_ = BT_MODE_BLE;
+        return;
+    }
     File file = LittleFS.open(btModeFileName.c_str());
+    if (!file) {
+        Serial.println("Error opening BT mode file, defaulting to BLE.");
+        currentBTMode_ = BT_MODE_BLE;
+        return;
+    }
 
     while (file.available()) {
         line += file.read();
     }
     Serial.printf("BTMode: %s\n", line.c_str());
     file.close();
+    if (line.empty()) {
+        Serial.println("BT mode file empty, defaulting to BLE.");
+        currentBTMode_ = BT_MODE_BLE;
+        return;
+    }
     currentBTMode_ = (BTMode)(line[0] - '0'); // was: stoi(line);
 }
 
@@ -354,16 +390,29 @@ void SparkDataControl::readPresetChecksums() {
     checksums.clear();
     for (int i = 1; i <= PRESETS_PER_BANK; i++) {
         Preset preset = presetControl.getPreset(1, i);
-        byte checksum = sparkMsg.getPresetChecksum(preset);
-        checksums.push_back(checksum);
+        if (preset.isEmpty) {
+            checksums.push_back(0);
+        } else {
+            byte checksum = sparkMsg.getPresetChecksum(preset);
+            checksums.push_back(checksum);
+        }
     }
 }
 
 void SparkDataControl::checkForUpdates() {
 
-    if (msgQueue.size() > 0) {
-        processSparkData(msgQueue.front());
-        msgQueue.pop();
+    ByteVector blk;
+    bool hasMessage = false;
+    if (xSemaphoreTake(msgQueueMutex, pdMS_TO_TICKS(10)) == pdTRUE) {
+        if (msgQueue.size() > 0) {
+            blk = msgQueue.front();
+            msgQueue.pop();
+            hasMessage = true;
+        }
+        xSemaphoreGive(msgQueueMutex);
+    }
+    if (hasMessage) {
+        processSparkData(blk);
     }
 
     SparkPresetControl::getInstance().checkForUpdates(operationMode_);
@@ -425,16 +474,17 @@ void SparkDataControl::checkForUpdates() {
 
 void SparkDataControl::processSparkData(ByteVector &blk) {
 
-    /*DEBUG_PRINT("Received data: ");
-    DEBUG_PRINTVECTOR(blk);
-    DEBUG_PRINTLN();
-    */
+    Serial.printf("processSparkData: %d bytes\n", blk.size());
+
     // Check if incoming message requires sending an acknowledgment
     handleSendingAck(blk);
 
     MessageProcessStatus retCode = sparkSsr.processBlock(blk);
+    Serial.printf("processBlock result: %d\n", retCode);
     if (retCode == MSG_PROCESS_RES_REQUEST && operationMode_ == SPARK_MODE_AMP) {
+        Serial.println(">> Entering handleAmpModeRequest");
         handleAmpModeRequest();
+        Serial.println("<< handleAmpModeRequest done");
     }
     if (retCode == MSG_PROCESS_RES_COMPLETE) {
         handleAppModeResponse();
@@ -615,69 +665,94 @@ void SparkDataControl::handleAmpModeRequest() {
     Preset preset;
 
     MessageType lastMessageType = statusObject.lastMessageType();
+    Serial.printf("handleAmpModeRequest: msgType=%d, msgNum=%02X\n", lastMessageType, currentMessageNum);
     bool sendMessage = true;
     switch (lastMessageType) {
 
     case MSG_REQ_SERIAL:
-        DEBUG_PRINTLN("Found request for serial number");
+        Serial.println("Found request for serial number");
         msg = sparkMsg.sendSerialNumber(
             currentMessageNum);
         break;
     case MSG_REQ_FW_VER:
-        DEBUG_PRINTLN("Found request for firmware version");
+        Serial.println("Found request for firmware version");
         msg = sparkMsg.sendFirmwareVersion(
             currentMessageNum);
         break;
     case MSG_REQ_PRESET_CHK:
-        DEBUG_PRINTLN("Found request for hw checksum");
+        Serial.println("Found request for hw checksum");
         msg = sparkMsg.sendHWChecksums(currentMessageNum, checksums);
         break;
     case MSG_REQ_CURR_PRESET_NUM:
-        DEBUG_PRINTLN("Found request for hw preset number");
+        Serial.println("Found request for hw preset number");
         msg = sparkMsg.sendHWPresetNumber(currentMessageNum);
         break;
     case MSG_REQ_CURR_PRESET:
-        DEBUG_PRINTLN("Found request for current preset");
+        Serial.println("Found request for current preset");
         preset = presetControl.activePreset();
-        preset.presetNumber = 127;
-        msg = sparkMsg.changePreset(preset, DIR_FROM_SPARK,
-                                    currentMessageNum);
+        if (preset.isEmpty) {
+            Serial.println("WARNING: active preset is empty!");
+            sendMessage = false;
+        } else {
+            preset.presetNumber = 127;
+            msg = sparkMsg.changePreset(preset, DIR_FROM_SPARK,
+                                        currentMessageNum);
+        }
         break;
     case MSG_REQ_PRESET1:
-        DEBUG_PRINTLN("Found request for preset 1");
+        Serial.println("Found request for preset 1");
         preset = presetControl.getPreset(1, 1);
-        preset.presetNumber = 0;
-        msg = sparkMsg.changePreset(preset, DIR_FROM_SPARK, currentMessageNum);
+        if (preset.isEmpty) {
+            Serial.println("WARNING: preset 1 is empty, skipping response");
+            sendMessage = false;
+        } else {
+            preset.presetNumber = 0;
+            msg = sparkMsg.changePreset(preset, DIR_FROM_SPARK, currentMessageNum);
+        }
         break;
     case MSG_REQ_PRESET2:
-        DEBUG_PRINTLN("Found request for preset 2");
+        Serial.println("Found request for preset 2");
         preset = presetControl.getPreset(1, 2);
-        preset.presetNumber = 1;
-        DEBUG_PRINTF("Preset NUMBER after init: %02X\n", preset.presetNumber);
-        msg = sparkMsg.changePreset(preset, DIR_FROM_SPARK, currentMessageNum);
+        if (preset.isEmpty) {
+            Serial.println("WARNING: preset 2 is empty, skipping response");
+            sendMessage = false;
+        } else {
+            preset.presetNumber = 1;
+            msg = sparkMsg.changePreset(preset, DIR_FROM_SPARK, currentMessageNum);
+        }
         break;
     case MSG_REQ_PRESET3:
-        DEBUG_PRINTLN("Found request for preset 3");
+        Serial.println("Found request for preset 3");
         preset = presetControl.getPreset(1, 3);
-        preset.presetNumber = 2;
-        msg = sparkMsg.changePreset(preset, DIR_FROM_SPARK, currentMessageNum);
+        if (preset.isEmpty) {
+            Serial.println("WARNING: preset 3 is empty, skipping response");
+            sendMessage = false;
+        } else {
+            preset.presetNumber = 2;
+            msg = sparkMsg.changePreset(preset, DIR_FROM_SPARK, currentMessageNum);
+        }
         break;
     case MSG_REQ_PRESET4:
-        DEBUG_PRINTLN("Found request for preset 4");
+        Serial.println("Found request for preset 4");
         preset = presetControl.getPreset(1, 4);
-        preset.presetNumber = 3;
-        msg = sparkMsg.changePreset(preset, DIR_FROM_SPARK, currentMessageNum);
+        if (preset.isEmpty) {
+            Serial.println("WARNING: preset 4 is empty, skipping response");
+            sendMessage = false;
+        } else {
+            preset.presetNumber = 3;
+            msg = sparkMsg.changePreset(preset, DIR_FROM_SPARK, currentMessageNum);
+        }
         break;
     case MSG_REQ_AMP_STATUS:
-        DEBUG_PRINTLN("Found request for amp status");
+        Serial.println("Found request for amp status");
         msg = sparkMsg.sendAmpStatus(currentMessageNum);
         break;
     case MSG_REQ_72:
-        DEBUG_PRINTLN("Found request for 02 72");
+        Serial.println("Found request for 02 72");
         msg = sparkMsg.sendResponse72(currentMessageNum);
         break;
     default:
-        DEBUG_PRINTF("Found invalid request: %d \n", lastMessageType);
+        Serial.printf("Found invalid request: %d \n", lastMessageType);
         sendMessage = false;
         break;
     }
@@ -976,7 +1051,12 @@ void SparkDataControl::bleNotificationCallback(
 
 void SparkDataControl::queueMessage(ByteVector &blk) {
     if (blk.size() > 0) {
-        msgQueue.push(blk);
+        if (xSemaphoreTake(msgQueueMutex, pdMS_TO_TICKS(50)) == pdTRUE) {
+            msgQueue.push(blk);
+            xSemaphoreGive(msgQueueMutex);
+        } else {
+            Serial.println("WARNING: msgQueue mutex timeout in queueMessage");
+        }
     }
 }
 
@@ -990,6 +1070,7 @@ bool SparkDataControl::sendMessageToBT(ByteVector &msg) {
 /////////////////////////////////////////////////////////
 
 void SparkDataControl::sendButtonPressAsKeyboard(keyboardKeyDefinition k) {
+#ifndef BOARD_LILYGO_T_DISPLAY_S3
     if (bleKeyboard.isConnected()) {
 
         Serial.printf("Sending button: %d - mod: %d - repeat: %d\n", k.key, k.modifier, k.repeat);
@@ -1005,6 +1086,7 @@ void SparkDataControl::sendButtonPressAsKeyboard(keyboardKeyDefinition k) {
     } else {
         Serial.println("Keyboard not connected");
     }
+#endif
 }
 
 void SparkDataControl::resetLastKeyboardButtonPressed() {

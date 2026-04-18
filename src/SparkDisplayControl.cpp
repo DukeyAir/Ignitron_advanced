@@ -7,61 +7,117 @@
 
 #include "SparkDisplayControl.h"
 
-const int SparkDisplayControl::SCREEN_WIDTH = 128;         // Display width
-const int SparkDisplayControl::SCREEN_HEIGHT = 64;         // Display height
-const int SparkDisplayControl::OLED_RESET = -1;            // Reset pin # (or -1 if sharing Arduino reset pin)
-const int SparkDisplayControl::DISPLAY_MIN_X_FACTOR = -12; // for text size 2, scales linearly with text size
+#ifdef DISPLAY_DRIVER_TFT
+const int SparkDisplayControl::SCREEN_WIDTH = 320;
+const int SparkDisplayControl::SCREEN_HEIGHT = 170;
+const int SparkDisplayControl::OLED_RESET = -1;
+const int SparkDisplayControl::DISPLAY_MIN_X_FACTOR = -20;
+
+TFT_eSPI SparkDisplayControl::tft_ = TFT_eSPI(170, 320);
+TFT_eSprite SparkDisplayControl::display_(&tft_);
+
+SparkDisplayControl::SparkDisplayControl() : SparkDisplayControl(nullptr) {}
+
+SparkDisplayControl::SparkDisplayControl(SparkDataControl *dc) {
+    sparkDC_ = dc;
+}
+
+SparkDisplayControl::~SparkDisplayControl() {}
+
+void SparkDisplayControl::init(int mode) {
+    tft_.init();
+    tft_.setRotation(3); // landscape, 180° flipped
+    tft_.fillScreen(TFT_BLACK);
+
+    // Create full-screen sprite for double-buffered drawing
+    display_.createSprite(320, 170);
+    display_.setTextColor(TFT_WHITE, TFT_BLACK);
+    display_.setTextWrap(false);
+
+    // Enable backlight
+    pinMode(38, OUTPUT);
+    digitalWrite(38, HIGH);
+
+    initKeyboardLayoutStrings();
+    showInitialMessage();
+
+    if (sparkDC_->operationMode() == SPARK_MODE_KEYBOARD) {
+        delay(2000);
+    }
+}
+
+void SparkDisplayControl::showInitialMessage() {
+    display_.fillSprite(TFT_BLACK);
+    display_.setTextSize(3);
+    display_.setTextColor(TFT_CYAN, TFT_BLACK);
+    drawCentreString("IGNITRON", 30);
+
+    display_.setTextSize(2);
+    display_.setTextColor(TFT_WHITE, TFT_BLACK);
+
+    string modeText;
+    switch (sparkDC_->operationMode()) {
+    case SPARK_MODE_APP:
+        modeText = "APP";
+        break;
+    case SPARK_MODE_AMP:
+        modeText = "AMP";
+        break;
+    case SPARK_MODE_KEYBOARD:
+        modeText = "KB";
+        break;
+    }
+    modeText += " v" + VERSION;
+    drawCentreString(modeText.c_str(), 80);
+    display_.pushSprite(0, 0);
+}
+
+#else
+// Original OLED code
+const int SparkDisplayControl::SCREEN_WIDTH = 128;
+const int SparkDisplayControl::SCREEN_HEIGHT = 64;
+const int SparkDisplayControl::OLED_RESET = -1;
+const int SparkDisplayControl::DISPLAY_MIN_X_FACTOR = -12;
 
 #if defined(OLED_DRIVER_SSD1306)
 Adafruit_SSD1306 SparkDisplayControl::display_(SCREEN_WIDTH, SCREEN_HEIGHT,
                                                &Wire, OLED_RESET);
-SparkDisplayControl::SparkDisplayControl() : SparkDisplayControl(nullptr) {
-}
 #elif defined(OLED_DRIVER_SH1106)
 Adafruit_SH1106G SparkDisplayControl::display_(SCREEN_WIDTH, SCREEN_HEIGHT,
                                                &Wire, OLED_RESET);
-SparkDisplayControl::SparkDisplayControl() : SparkDisplayControl(nullptr) {
-}
 #elif defined(OLED_DRIVER_SH1107)
 Adafruit_SH1107 SparkDisplayControl::display_(SCREEN_HEIGHT, SCREEN_WIDTH,
                                               &Wire, OLED_RESET);
-SparkDisplayControl::SparkDisplayControl() : SparkDisplayControl(nullptr) {
-}
 #endif
 
+SparkDisplayControl::SparkDisplayControl() : SparkDisplayControl(nullptr) {}
+
 SparkDisplayControl::SparkDisplayControl(SparkDataControl *dc) {
-    // Adafruit_SSD1306 display_(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
     sparkDC_ = dc;
 }
 
-SparkDisplayControl::~SparkDisplayControl() {
-}
+SparkDisplayControl::~SparkDisplayControl() {}
 
 void SparkDisplayControl::init(int mode) {
 #if defined(OLED_DRIVER_SSD1306)
-    // SSD1306_SWITCHCAPVCC = generate display voltage from 3.3V internally
-    if (!display_.begin(SSD1306_SWITCHCAPVCC, 0x3C)) { // 0x3C required for this display
+    if (!display_.begin(SSD1306_SWITCHCAPVCC, 0x3C)) {
         Serial.println(F("SSD1306 initialization failed"));
-        for (;;)
-            ; // Loop forever
+        for (;;);
     }
 #elif defined(OLED_DRIVER_SH1106)
-    if (!display_.begin(0x3C, true)) { // 0x3C required for this display
+    if (!display_.begin(0x3C, true)) {
         Serial.println(F("SH1106 initialization failed"));
-        for (;;)
-            ; // Loop forever
+        for (;;);
     }
 #elif defined(OLED_DRIVER_SH1107)
-    if (!display_.begin(0x3C, true)) { // 0x3C required for this display
+    if (!display_.begin(0x3C, true)) {
         Serial.println(F("SH1107 initialization failed"));
-        for (;;)
-            ; // Loop forever
+        for (;;);
     }
-    display_.setRotation(1);
+    display_.setRotation(3);
 #endif
     initKeyboardLayoutStrings();
-    // Clear the buffer
-    display_.clearDisplay(); // No Adafruit splash
+    display_.clearDisplay();
     display_.display();
     display_.setTextColor(WHITE);
     display_.setTextWrap(false);
@@ -69,7 +125,6 @@ void SparkDisplayControl::init(int mode) {
     showInitialMessage();
     display_.display();
     if (sparkDC_->operationMode() == SPARK_MODE_KEYBOARD) {
-        // Allow the initial screen to show for some time
         delay(2000);
     }
 }
@@ -92,9 +147,9 @@ void SparkDisplayControl::showInitialMessage() {
         break;
     }
     modeText += " v" + VERSION;
-
     drawCentreString(modeText.c_str(), 50);
 }
+#endif // DISPLAY_DRIVER_TFT
 
 void SparkDisplayControl::showBankAndPresetNum() {
 
@@ -705,6 +760,44 @@ void SparkDisplayControl::update(bool isInitBoot) {
 
     OperationMode opMode = sparkDC_->operationMode();
     SubMode subMode = sparkDC_->subMode();
+
+#ifdef DISPLAY_DRIVER_TFT
+    display_.fillSprite(TFT_BLACK);
+
+    if ((opMode == SPARK_MODE_APP) && isInitBoot) {
+        showInitialMessage();
+    } else if (opMode == SPARK_MODE_KEYBOARD) {
+        if (sparkDC_->keyboardChanged()) {
+            initKeyboardLayoutStrings();
+            sparkDC_->resetKeyboardChangeIndicator();
+        }
+        lastKeyboardButtonPressedString = sparkDC_->lastKeyboardButtonPressedString();
+        showPressedKey();
+        showKeyboardLayout();
+    } else {
+        SparkStatus &statusObject = SparkStatus::getInstance();
+        isVolumeChanged = statusObject.isVolumeChanged();
+        if (isVolumeChanged) {
+            volumeChangedTimestamp = millis();
+            statusObject.resetVolumeUpdateFlag();
+        }
+        unsigned int now = millis();
+        if (now - volumeChangedTimestamp <= showVolumeChangedInterval) {
+            showVolumeBar();
+        } else {
+            display_.setTextWrap(false);
+            showConnection();
+            showModeModifier();
+            updateTextPositions();
+            showPresetName();
+            showBankAndPresetNum();
+            showFX_SecondaryName();
+        }
+    }
+    display_.pushSprite(0, 0);
+    return;
+#else
+    // OLED update path
     display_.clearDisplay();
     checkInvertDisplay(subMode);
 
@@ -759,6 +852,7 @@ void SparkDisplayControl::update(bool isInitBoot) {
     }
     // logDisplay();
     display_.display();
+#endif // DISPLAY_DRIVER_TFT
 }
 
 void SparkDisplayControl::updateTextPositions() {
@@ -797,25 +891,39 @@ void SparkDisplayControl::updateTextPositions() {
 
 void SparkDisplayControl::drawCentreString(const char *buf,
                                            int y, int offset) {
+#ifdef DISPLAY_DRIVER_TFT
+    int w = display_.textWidth(buf);
+    int displayMid = display_.width() / 2;
+    display_.setCursor(displayMid - w / 2 + offset, y);
+    display_.print(buf);
+#else
     int16_t x1, y1;
     uint16_t w, h;
     int displayMid = display_.width() / 2;
 
-    display_.getTextBounds(buf, displayMid, y, &x1, &y1, &w, &h); // calc width of new string
+    display_.getTextBounds(buf, displayMid, y, &x1, &y1, &w, &h);
     display_.setCursor(displayMid - w / 2 + offset, y);
     display_.print(buf);
+#endif
 }
 
 void SparkDisplayControl::drawRightAlignedString(const char *buf,
                                                  int y, int offset) {
+#ifdef DISPLAY_DRIVER_TFT
+    int w = display_.textWidth(buf);
+    int displayWidth = display_.width();
+    display_.setCursor(displayWidth - w + offset, y);
+    display_.print(buf);
+#else
     int16_t x1, y1;
     uint16_t w, h;
     int x = 0;
     int displayWidth = display_.width();
 
-    display_.getTextBounds(buf, x, y, &x1, &y1, &w, &h); // calc width of new string
+    display_.getTextBounds(buf, x, y, &x1, &y1, &w, &h);
     display_.setCursor(displayWidth - w + offset, y);
     display_.print(buf);
+#endif
 }
 
 void SparkDisplayControl::drawTunerTriangleCentre(int x, int size, bool dir, int color) {

@@ -7,20 +7,30 @@
 
 #include "SparkLEDControl.h"
 
+#ifdef USE_NEOPIXEL_LEDS
+#include <FastLED.h>
+CRGB SparkLEDControl::leds_[NEOPIXEL_NUM_LEDS];
+#endif
+
 SparkLEDControl::SparkLEDControl() {
     sparkDC = nullptr;
-    init();
+    // Don't call init() here - hardware not ready during static construction
 }
 
 SparkLEDControl::SparkLEDControl(SparkDataControl *dc) {
     sparkDC = dc;
-    init();
+    // Don't call init() here - hardware not ready during static construction
 }
 
 SparkLEDControl::~SparkLEDControl() {
 }
 
 void SparkLEDControl::init() {
+#ifdef USE_NEOPIXEL_LEDS
+    FastLED.addLeds<WS2812B, NEOPIXEL_DATA_PIN, GRB>(leds_, NEOPIXEL_NUM_LEDS);
+    FastLED.setBrightness(50);
+    allLedOff();
+#else
     // Preset LEDs
     pinMode(LED_PRESET1_GPIO, OUTPUT);
     pinMode(LED_PRESET2_GPIO, OUTPUT);
@@ -38,16 +48,13 @@ void SparkLEDControl::init() {
     pinMode(LED_COMP_GPIO, OUTPUT);
 
 #ifndef DEDICATED_PRESET_LEDS
-    // For special corner case where the extra dedicated
-    // Preset LED hardware *is* connected to the extra
-    // GPIO ports, but the define that activates them is
-    // undefined
     pinMode(OPTIONAL_GPIO_1, OUTPUT);
     pinMode(OPTIONAL_GPIO_2, OUTPUT);
     pinMode(OPTIONAL_GPIO_3, OUTPUT);
     pinMode(OPTIONAL_GPIO_4, OUTPUT);
 #endif
     allLedOff();
+#endif // USE_NEOPIXEL_LEDS
 }
 
 void SparkLEDControl::updateLEDs() {
@@ -125,7 +132,7 @@ void SparkLEDControl::updateLedAmp() {
     if (presetEditMode != PRESET_EDIT_NONE) {
 
         if (presetNumToEdit == 0) {
-            for (int i = 1; i <= 4; i++) {
+            for (int i = 1; i <= PRESETS_PER_BANK; i++) {
                 switchLed(i, true);
             }
         } else if (currentMillis - previousMillis >= blinkInterval_ms) {
@@ -227,6 +234,10 @@ void SparkLEDControl::updateLedTuner() {
 }
 
 void SparkLEDControl::allLedOff() {
+#ifdef USE_NEOPIXEL_LEDS
+    fill_solid(leds_, NEOPIXEL_NUM_LEDS, CRGB::Black);
+    FastLED.show();
+#else
     // Preset LEDs
     digitalWrite(LED_PRESET1_GPIO, LOW);
     digitalWrite(LED_PRESET2_GPIO, LOW);
@@ -243,15 +254,12 @@ void SparkLEDControl::allLedOff() {
     digitalWrite(LED_REVERB_GPIO, LOW);
 
 #ifndef DEDICATED_PRESET_LEDS
-    // For special corner case where the extra dedicated
-    // Preset LED hardware *is* connected to the extra
-    // GPIO ports, but the define that activates them is
-    // undefined.
     digitalWrite(OPTIONAL_GPIO_1, LOW);
     digitalWrite(OPTIONAL_GPIO_2, LOW);
     digitalWrite(OPTIONAL_GPIO_3, LOW);
     digitalWrite(OPTIONAL_GPIO_4, LOW);
 #endif
+#endif // USE_NEOPIXEL_LEDS
 }
 
 void SparkLEDControl::switchLed(int num, bool on, bool fxMode) {
@@ -269,9 +277,22 @@ void SparkLEDControl::switchLed(int num, bool on, bool fxMode) {
         STATE = (on) ? HIGH : LOW; // Normal non blink action
     }
 
+#ifdef USE_NEOPIXEL_LEDS
+    // Map button number to physical NeoPixel index.
+    // Strip wiring: Top L→R = LED 0-3, Bottom R→L = LED 4-7
+    // Button layout: Top L→R = BankUp(6), P4(4), (unused), (unused)
+    //                Bot L→R = BankDown(5), P1(1), P2(2), P3(3)
+    //              num:  1  2  3  4  5  6
+    const int map[] = { 6, 5, 4, 1, 7, 0 };
+    int ledIndex = (num >= 1 && num <= 6) ? map[num - 1] : -1;
+    if (ledIndex >= 0 && ledIndex < NEOPIXEL_NUM_LEDS) {
+        leds_[ledIndex] = (STATE == HIGH) ? CRGB::Green : CRGB::Black;
+        FastLED.show();
+    }
+#else
     int ledGpio = SparkHelper::getLedGpio(num, fxMode);
     if (ledGpio != LED_GPIO_INVALID) {
-        // Serial.printf("Pin %d [State=%d], invert=%d, fxMode=%d\n", ledGpio, STATE, blinkInvert, fxMode);
         digitalWrite(ledGpio, STATE);
     }
+#endif
 }

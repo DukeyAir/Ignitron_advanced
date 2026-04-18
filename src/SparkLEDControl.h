@@ -13,6 +13,9 @@
 #include "SparkLooperControl.h"
 #include "SparkPresetControl.h"
 #include <Arduino.h>
+#ifdef USE_NEOPIXEL_LEDS
+#include <FastLED.h>
+#endif
 
 using namespace std;
 
@@ -27,9 +30,9 @@ public:
     void setDataControl(SparkDataControl *dc) {
         sparkDC = dc;
     }
+    void init();
 
 private:
-    void init();
     SparkDataControl *sparkDC;
     KeyboardMapping mapping;
 
@@ -56,6 +59,10 @@ private:
 
     void allLedOff();
     void switchLed(int num, bool on = true, bool fxMode = false);
+
+#ifdef USE_NEOPIXEL_LEDS
+    static CRGB leds_[NEOPIXEL_NUM_LEDS];
+#endif
 };
 
 #endif /* SPARKLEDCONTROL_H_ */

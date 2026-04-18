@@ -10,12 +10,15 @@
 
 #include "CircularBuffer.h"
 #include "Config_Definitions.h"
+#ifndef BOARD_LILYGO_T_DISPLAY_S3
 #include "SparkBLEKeyboard.h"
+#endif
 #include "SparkBTControl.h"
 #include "SparkKeyboardControl.h"
 #include "SparkLooperControl.h"
 
 #include <Arduino.h>
+#include <freertos/semphr.h>
 #include <queue>
 #include <stdexcept>
 #include <vector>
@@ -174,7 +177,9 @@ private:
     static SparkKeyboardControl *keyboardControl;
     static SparkLooperControl looperControl_;
 
+#ifndef BOARD_LILYGO_T_DISPLAY_S3
     static SparkBLEKeyboard bleKeyboard;
+#endif
 
     // TODO: Put settings into proper config file
     string btModeFileName = "/config/BTMode.config";
@@ -225,6 +230,7 @@ private:
 
     static byte nextMessageNum;
     static queue<ByteVector> msgQueue;
+    static SemaphoreHandle_t msgQueueMutex;
     static deque<CmdData> currentCommand;
     static deque<AckData> pendingLooperAcks;
 

@@ -7,6 +7,8 @@
 
 #include "SparkBLEKeyboard.h"
 
+#ifndef BOARD_LILYGO_T_DISPLAY_S3
+
 SparkBLEKeyboard::SparkBLEKeyboard() {
 }
 
@@ -28,3 +30,5 @@ void SparkBLEKeyboard::start() {
 	pServer->startAdvertising();
 
 }
+
+#endif // !BOARD_LILYGO_T_DISPLAY_S3

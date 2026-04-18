@@ -104,9 +104,14 @@ enum BatteryChargingStatus {
 // 1.3" OLED 128x64 displays commonly uses an SH1106 driver.
 // Choose driver below, only one can be defined!
 
+// Display driver config
+#ifdef BOARD_LILYGO_T_DISPLAY_S3
+#define DISPLAY_DRIVER_TFT
+#else
 #define OLED_DRIVER_SSD1306
 // #define OLED_DRIVER_SH1106
 // #define OLED_DRIVER_SH1107
+#endif
 
 // Optional setting for enabling Blink mode when in Manual/FX mode.
 // Depending on the user preferences enabling blink can be a help
@@ -115,6 +120,32 @@ enum BatteryChargingStatus {
 const bool ENABLE_FX_BLINK = false;
 
 // Button GPIOs
+#ifdef BOARD_LILYGO_T_DISPLAY_S3
+// Custom wiring: Bottom row L-R: 11,44,12,43 / Top row L-R: 3,16,10,13
+enum ButtonGpio {
+    BUTTON_BANK_DOWN_GPIO = 11,
+
+    BUTTON_PRESET1_GPIO = 44,
+    BUTTON_DRIVE_GPIO = 44,
+
+    BUTTON_PRESET2_GPIO = 12,
+    BUTTON_MOD_GPIO = 12,
+
+    BUTTON_PRESET3_GPIO = 43,
+    BUTTON_DELAY_GPIO = 43,
+
+    BUTTON_BANK_UP_GPIO = 3,
+
+    BUTTON_PRESET4_GPIO = 16,
+    BUTTON_REVERB_GPIO = 16,
+
+    BUTTON_PRESET5_GPIO = 10,
+    BUTTON_NOISEGATE_GPIO = 10,
+
+    BUTTON_PRESET6_GPIO = 13,
+    BUTTON_COMP_GPIO = 13
+};
+#else
 enum ButtonGpio {
     BUTTON_PRESET1_GPIO = 25,
     BUTTON_DRIVE_GPIO = 25,
@@ -134,11 +165,39 @@ enum ButtonGpio {
     BUTTON_BANK_UP_GPIO = 18,
     BUTTON_COMP_GPIO = 18
 };
+#endif // !BOARD_LILYGO_T_DISPLAY_S3
 
 // Button long press time
 const int LONG_BUTTON_PRESS_TIME = 1000;
 
 // LED GPIOs
+
+#ifdef BOARD_LILYGO_T_DISPLAY_S3
+// T-Display S3 uses NeoPixel LEDs on a single data pin
+#define USE_NEOPIXEL_LEDS
+#define NEOPIXEL_DATA_PIN 21
+#define NEOPIXEL_NUM_LEDS 8
+
+// Dummy LED GPIO enum (not used with NeoPixel, but needed for compilation)
+enum LedGpio {
+    LED_DRIVE_GPIO = -1,
+    LED_MOD_GPIO = -1,
+    LED_DELAY_GPIO = -1,
+    LED_REVERB_GPIO = -1,
+    LED_NOISEGATE_GPIO = -1,
+    LED_COMP_GPIO = -1,
+    LED_PRESET1_GPIO = -1,
+    LED_PRESET2_GPIO = -1,
+    LED_PRESET3_GPIO = -1,
+    LED_PRESET4_GPIO = -1,
+    LED_PRESET5_GPIO = -1,
+    LED_PRESET6_GPIO = -1,
+    LED_BANK_DOWN_GPIO = -1,
+    LED_BANK_UP_GPIO = -1,
+    LED_GPIO_INVALID = -1
+};
+
+#else // Original LED GPIO config
 
 // If the optional DEDICATED_PRESET_LEDS is defined below it will
 // slightly alter the behaviour of Ignitron to make the FX and
@@ -201,6 +260,7 @@ enum LedOptionalGpio {
     OPTIONAL_GPIO_4 = 15
 };
 #endif
+#endif // !BOARD_LILYGO_T_DISPLAY_S3
 
 // LED/Button numbering
 enum FxLedButtonNumber {
@@ -213,6 +273,7 @@ enum FxLedButtonNumber {
     INVALID_FX_BUTTON_NUM = -1
 };
 
+#ifdef BOARD_LILYGO_T_DISPLAY_S3
 enum PresetLedButtonNum {
     PRESET1_NUM = 1,
     PRESET2_NUM = 2,
@@ -222,6 +283,17 @@ enum PresetLedButtonNum {
     BANK_UP_NUM = 6,
     INVALID_PRESET_BUTTON_NUM = -1
 };
+#else
+enum PresetLedButtonNum {
+    PRESET1_NUM = 1,
+    PRESET2_NUM = 2,
+    PRESET3_NUM = 3,
+    PRESET4_NUM = 4,
+    BANK_DOWN_NUM = 5,
+    BANK_UP_NUM = 6,
+    INVALID_PRESET_BUTTON_NUM = -1
+};
+#endif
 
 // Positions of FX types in Preset struct
 enum FxType {

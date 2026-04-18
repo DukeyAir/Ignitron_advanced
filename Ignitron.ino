@@ -40,14 +40,38 @@ OperationMode operationMode = SPARK_MODE_APP;
 
 void setup() {
 
+#ifdef BOARD_LILYGO_T_DISPLAY_S3
+    // T-Display S3: Power on LCD (GPIO 15 must be HIGH)
+    pinMode(15, OUTPUT);
+    digitalWrite(15, HIGH);
+    // Backlight on
+    pinMode(38, OUTPUT);
+    digitalWrite(38, HIGH);
+#endif
+
     Serial.begin(115200);
+#ifdef BOARD_LILYGO_T_DISPLAY_S3
+    // On ESP32-S3 USB CDC, Serial may never become ready without a host
+    delay(1000);
+#else
     while (!Serial)
         ;
+#endif
 
     Serial.println("Initializing");
     if (!LittleFS.begin(true)) {
         Serial.println("LittleFS Mount failed");
         return;
+    }
+    // Filesystem diagnostic
+    {
+        File f1 = LittleFS.open("/PresetList.txt");
+        File f2 = LittleFS.open("/PresetListUUIDs.txt");
+        Serial.printf("FS CHECK: PresetList.txt=%s(%d) PresetListUUIDs.txt=%s(%d)\n",
+                      f1 ? "OK" : "MISSING", f1 ? (int)f1.size() : -1,
+                      f2 ? "OK" : "MISSING", f2 ? (int)f2.size() : -1);
+        if (f1) f1.close();
+        if (f2) f2.close();
     }
     // spark_dc = new SparkDataControl();
     spark_bh.setDataControl(&spark_dc);
@@ -77,6 +101,7 @@ void setup() {
     spark_bh.setDataControl(&spark_dc);
     // Initializing control classes
     spark_led.setDataControl(&spark_dc);
+    spark_led.init();
 
     Serial.println("Initialization done.");
 }
